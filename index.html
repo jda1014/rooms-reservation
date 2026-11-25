@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>특별실 예약</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --line: #e3e8f0;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --primary: #2f6fed;
+    --primary-soft: #e8f0ff;
+    --booked: #fff4e0;
+    --booked-line: #f5c26b;
+    --danger: #e5484d;
+    --ok: #18a058;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+    padding: 16px 20px;
+  }
+  header h1 { margin: 0; font-size: 1.35rem; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: .92rem; }
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 20px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+    min-width: 0;
+  }
+  .card h2 { margin: 0 0 14px; font-size: 1.1rem; }
+  .full { grid-column: 1 / -1; }
+
+  label { display: block; font-size: .9rem; font-weight: 600; margin: 12px 0 4px; }
+  input, select, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font: inherit;
+    background: #fff;
+    color: var(--text);
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--primary-soft);
+    border-color: var(--primary);
+  }
+  textarea { resize: vertical; min-height: 64px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  button {
+    font: inherit;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .btn-primary { background: var(--primary); color: #fff; width: 100%; margin-top: 18px; padding: 12px; }
+  .btn-primary:disabled { opacity: .6; cursor: default; }
+  .btn-ghost { background: var(--primary-soft); color: var(--primary); }
+  .btn-danger { background: #fdecec; color: var(--danger); padding: 6px 12px; font-size: .88rem; }
+  .btn-danger-solid { background: var(--danger); color: #fff; }
+  .btn-gray { background: #eef1f5; color: var(--text); }
+
+  /* 주간 시간표 */
+  .tt-head {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .tt-head select { width: auto; min-width: 140px; }
+  .week-nav { display: flex; align-items: center; gap: 8px; }
+  .week-label { font-weight: 700; min-width: 150px; text-align: center; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.tt { width: 100%; border-collapse: collapse; min-width: 560px; table-layout: fixed; }
+  table.tt th, table.tt td {
+    border: 1px solid var(--line);
+    text-align: center;
+    padding: 6px;
+    height: 70px;
+    vertical-align: middle;
+  }
+  table.tt th { background: #f9fafc; font-size: .9rem; height: auto; padding: 8px 4px; }
+  table.tt th.today { background: var(--primary-soft); color: var(--primary); }
+  table.tt th.period { width: 56px; }
+  .slot-empty {
+    width: 100%; height: 100%;
+    background: transparent; color: #b3bac6;
+    font-weight: 500; font-size: .85rem;
+  }
+  .slot-empty:hover { background: var(--primary-soft); color: var(--primary); }
+  .slot-past { color: #cfd5de; font-size: .8rem; }
+  td.booked { background: var(--booked); border-color: var(--booked-line); }
+  .b-name { font-weight: 700; font-size: .95rem; }
+  .b-class { font-size: .8rem; color: var(--muted); }
+  .b-purpose {
+    font-size: .78rem; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* 검색 & 목록 */
+  .filters { display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; align-items: end; }
+  .filters label { margin-top: 0; }
+  .hint { color: var(--muted); font-size: .85rem; margin: 10px 0 0; }
+  .list { margin-top: 14px; }
+  .item {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 4px;
+    border-top: 1px solid var(--line);
+  }
+  .item-main { min-width: 0; }
+  .item-title { font-weight: 700; }
+  .item-sub { color: var(--muted); font-size: .88rem; overflow-wrap: anywhere; }
+  .tag {
+    display: inline-block; background: var(--primary-soft); color: var(--primary);
+    border-radius: 999px; padding: 1px 10px; font-size: .8rem; font-weight: 700; margin-right: 6px;
+  }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+
+  /* 알림 & 확인창 */
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+    background: #1f2937; color: #fff; padding: 12px 20px; border-radius: 12px;
+    opacity: 0; pointer-events: none; transition: all .25s; z-index: 50;
+    max-width: calc(100% - 32px); text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.error { background: var(--danger); }
+  .toast.ok { background: var(--ok); }
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(15, 23, 42, .45);
+    display: none; align-items: center; justify-content: center; padding: 16px; z-index: 40;
+  }
+  .modal-bg.show { display: flex; }
+  .modal { background: #fff; border-radius: var(--radius); padding: 24px; width: 100%; max-width: 380px; }
+  .modal h3 { margin: 0 0 8px; }
+  .modal p { margin: 0 0 20px; color: var(--muted); white-space: pre-line; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  .setup-warning {
+    max-width: 1200px; margin: 20px auto 0; padding: 14px 18px;
+    background: #fff4e0; border: 1px solid var(--booked-line); border-radius: var(--radius);
+    display: none;
+  }
+
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; padding: 14px; gap: 14px; }
+    .filters { grid-template-columns: 1fr 1fr; }
+    .filters .f-teacher { grid-column: 1 / -1; }
+  }
+  @media (max-width: 480px) {
+    .card { padding: 16px; }
+    .week-label { min-width: 0; font-size: .92rem; }
+    .tt-head select { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏫 특별실 예약</h1>
+  <p>빈 칸을 누르면 그 시간으로 바로 예약할 수 있어요.</p>
+</header>
+
+<div class="setup-warning" id="setupWarning">
+  ⚠️ 파일 맨 아래 스크립트의 <b>SUPABASE_URL</b>과 <b>SUPABASE_KEY</b>에 값을 붙여 넣어 주세요.
+</div>
+
+<main>
+  <!-- 예약 등록 -->
+  <section class="card" id="formCard">
+    <h2>✏️ 예약 등록</h2>
+    <form id="reserveForm" autocomplete="off">
+      <label for="fRoom">특별실</label>
+      <select id="fRoom" required></select>
+
+      <div class="row">
+        <div>
+          <label for="fDate">날짜</label>
+          <input type="date" id="fDate" required>
+        </div>
+        <div>
+          <label for="fPeriod">교시</label>
+          <select id="fPeriod" required></select>
+        </div>
+      </div>
+
+      <label for="fTeacher">교사 이름</label>
+      <input type="text" id="fTeacher" maxlength="20" placeholder="예: 김하늘" required>
+
+      <div class="row">
+        <div>
+          <label for="fGrade">학년</label>
+          <select id="fGrade" required></select>
+        </div>
+        <div>
+          <label for="fClass">반</label>
+          <input type="number" id="fClass" min="1" max="20" placeholder="예: 3" required>
+        </div>
+      </div>
+
+      <label for="fPurpose">사용 목적</label>
+      <textarea id="fPurpose" maxlength="100" placeholder="예: 과학 실험 (식물의 한살이)"></textarea>
+
+      <button type="submit" class="btn-primary" id="submitBtn">예약하기</button>
+    </form>
+  </section>
+
+  <!-- 주간 시간표 -->
+  <section class="card">
+    <div class="tt-head">
+      <h2 style="margin:0">📅 주간 시간표</h2>
+      <select id="ttRoom" aria-label="시간표 특별실 선택"></select>
+    </div>
+    <div class="tt-head">
+      <div class="week-nav">
+        <button class="btn-gray" id="prevWeek" aria-label="이전 주">◀</button>
+        <span class="week-label" id="weekLabel"></span>
+        <button class="btn-gray" id="nextWeek" aria-label="다음 주">▶</button>
+      </div>
+      <button class="btn-ghost" id="thisWeek">이번 주</button>
+    </div>
+    <div class="table-wrap">
+      <table class="tt" id="timetable"></table>
+    </div>
+  </section>
+
+  <!-- 검색 & 목록 -->
+  <section class="card full">
+    <h2>🔍 예약 찾기 · 취소</h2>
+    <div class="filters">
+      <div class="f-teacher">
+        <label for="sTeacher">교사 이름</label>
+        <input type="text" id="sTeacher" placeholder="이름 일부만 써도 돼요">
+      </div>
+      <div>
+        <label for="sRoom">특별실</label>
+        <select id="sRoom"></select>
+      </div>
+      <div>
+        <label for="sDate">날짜</label>
+        <input type="date" id="sDate">
+      </div>
+      <button class="btn-ghost" id="searchBtn">검색</button>
+      <button class="btn-gray" id="resetBtn">초기화</button>
+    </div>
+    <p class="hint">날짜를 고르지 않으면 오늘 이후 예약을 보여 드려요.</p>
+    <div class="list" id="list"></div>
+  </section>
+</main>
+
+<!-- 확인창 -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h3 id="modalTitle">예약을 취소할까요?</h3>
+    <p id="modalText"></p>
+    <div class="modal-actions">
+      <button class="btn-gray" id="modalNo">아니요</button>
+      <button class="btn-danger-solid" id="modalYes">예약 취소</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ▼▼▼ 여기에 Supabase 프로젝트 값을 붙여 넣으세요 ▼▼▼
+  const SUPABASE_URL = "https://fwspmtwzolorfxqxcdtm.supabase.co";   // 예: https://abcdefgh.supabase.co
+  const SUPABASE_KEY = "sb_publishable_bfW-oHt3bH2EKZfqdZzA0Q_zRZ5ivrv";   // publishable key (sb_publishable_... 또는 anon 키)
+  // ▲▲▲ 여기까지 ▲▲▲
+
+  const PERIODS = [1, 2, 3, 4, 5, 6];
+  const DAY_NAMES = ["월", "화", "수", "목", "금"];
+
+  const $ = (id) => document.getElementById(id);
+  let db = null;
+  let rooms = [];
+  let weekStart = null;          // 시간표에 보이는 주의 월요일
+  let pendingDelete = null;      // 취소 확인 중인 예약
+
+  // ---------- 날짜 도우미 (한국 시간 기준, UTC로 바꾸지 않음) ----------
+  function fmt(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  function parseDate(s) {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  function addDays(d, n) {
+    const x = new Date(d);
+    x.setDate(x.getDate() + n);
+    return x;
+  }
+  function mondayOf(d) {
+    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const day = x.getDay();                      // 0=일, 6=토
+    return addDays(x, day === 0 ? -6 : 1 - day);
+  }
+  function todayStr() { return fmt(new Date()); }
+  function prettyDate(s) {
+    const d = parseDate(s);
+    const wd = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
+    return `${d.getMonth() + 1}월 ${d.getDate()}일 (${wd})`;
+  }
+
+  // ---------- 알림 ----------
+  let toastTimer = null;
+  function toast(msg, type = "") {
+    const t = $("toast");
+    t.textContent = msg;
+    t.className = "toast show " + type;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (t.className = "toast " + type), 3000);
+  }
+
+  function roomName(id) {
+    const r = rooms.find((x) => x.id === id);
+    return r ? r.name : "(삭제된 특별실)";
+  }
+
+  // ---------- 화면 준비 ----------
+  function fillSelects() {
+    $("fPeriod").innerHTML = PERIODS.map((p) => `<option value="${p}">${p}교시</option>`).join("");
+    $("fGrade").innerHTML = PERIODS.map((g) => `<option value="${g}">${g}학년</option>`).join("");
+
+    const opts = rooms.map((r) => {
+      const o = document.createElement("option");
+      o.value = r.id;
+      o.textContent = r.location ? `${r.name} · ${r.location}` : r.name;
+      return o;
+    });
+    for (const id of ["fRoom", "ttRoom"]) {
+      const sel = $(id);
+      sel.innerHTML = "";
+      opts.forEach((o) => sel.appendChild(o.cloneNode(true)));
+    }
+    const s = $("sRoom");
+    s.innerHTML = '<option value="">전체</option>';
+    rooms.forEach((r) => {
+      const o = document.createElement("option");
+      o.value = r.id;
+      o.textContent = r.name;
+      s.appendChild(o);
+    });
+  }
+
+  async function loadRooms() {
+    const { data, error } = await db.from("rooms").select("id, name, location").order("id");
+    if (error) {
+      toast("특별실 목록을 불러오지 못했어요: " + error.message, "error");
+      return;
+    }
+    rooms = data;
+    fillSelects();
+  }
+
+  // ---------- 주간 시간표 ----------
+  async function renderTimetable() {
+    const table = $("timetable");
+    const roomId = Number($("ttRoom").value);
+    const days = DAY_NAMES.map((_, i) => addDays(weekStart, i));
+    const from = fmt(days[0]);
+    const to = fmt(days[4]);
+    const today = todayStr();
+
+    $("weekLabel").textContent =
+      `${days[0].getMonth() + 1}/${days[0].getDate()} ~ ${days[4].getMonth() + 1}/${days[4].getDate()}`;
+
+    if (!roomId) {
+      table.innerHTML = '<tr><td class="empty">특별실이 없어요.</td></tr>';
+      return;
+    }
+
+    const { data, error } = await db
+      .from("reservations")
+      .select("id, reserved_date, period, teacher_name, grade, class_no, purpose")
+      .eq("room_id", roomId)
+      .gte("reserved_date", from)
+      .lte("reserved_date", to);
+
+    if (error) {
+      toast("시간표를 불러오지 못했어요: " + error.message, "error");
+      return;
+    }
+
+    const map = {};
+    data.forEach((r) => (map[`${r.reserved_date}_${r.period}`] = r));
+
+    table.innerHTML = "";
+    const head = document.createElement("tr");
+    const corner = document.createElement("th");
+    corner.className = "period";
+    corner.textContent = "교시";
+    head.appendChild(corner);
+    days.forEach((d, i) => {
+      const th = document.createElement("th");
+      th.textContent = `${DAY_NAMES[i]} ${d.getMonth() + 1}/${d.getDate()}`;
+      if (fmt(d) === today) th.classList.add("today");
+      head.appendChild(th);
+    });
+    table.appendChild(head);
+
+    PERIODS.forEach((p) => {
+      const tr = document.createElement("tr");
+      const th = document.createElement("th");
+      th.className = "period";
+      th.textContent = `${p}`;
+      tr.appendChild(th);
+
+      days.forEach((d) => {
+        const ds = fmt(d);
+        const td = document.createElement("td");
+        const r = map[`${ds}_${p}`];
+        if (r) {
+          td.className = "booked";
+          td.title = r.purpose ? `사용 목적: ${r.purpose}` : "";
+          const n = document.createElement("div");
+          n.className = "b-name";
+          n.textContent = r.teacher_name;
+          const c = document.createElement("div");
+          c.className = "b-class";
+          c.textContent = `${r.grade}-${r.class_no}`;
+          td.append(n, c);
+          if (r.purpose) {
+            const pu = document.createElement("div");
+            pu.className = "b-purpose";
+            pu.textContent = r.purpose;
+            td.appendChild(pu);
+          }
+        } else if (ds < today) {
+          td.innerHTML = '<span class="slot-past">-</span>';
+        } else {
+          const b = document.createElement("button");
+          b.className = "slot-empty";
+          b.textContent = "+ 예약";
+          b.addEventListener("click", () => prefillForm(roomId, ds, p));
+          td.appendChild(b);
+        }
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    });
+  }
+
+  function prefillForm(roomId, dateStr, period) {
+    $("fRoom").value = roomId;
+    $("fDate").value = dateStr;
+    $("fPeriod").value = period;
+    $("formCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => $("fTeacher").focus(), 300);
+  }
+
+  function showWeekOf(dateStr, roomId) {
+    weekStart = mondayOf(parseDate(dateStr));
+    if (roomId) $("ttRoom").value = roomId;
+    renderTimetable();
+  }
+
+  // ---------- 예약 등록 ----------
+  async function submitReservation(e) {
+    e.preventDefault();
+    const roomId = Number($("fRoom").value);
+    const date = $("fDate").value;
+    const period = Number($("fPeriod").value);
+    const teacher = $("fTeacher").value.trim();
+    const grade = Number($("fGrade").value);
+    const classNo = Number($("fClass").value);
+    const purpose = $("fPurpose").value.trim();
+
+    if (!roomId || !date || !teacher || !classNo) {
+      toast("빈 칸을 모두 채워 주세요.", "error");
+      return;
+    }
+    const wd = parseDate(date).getDay();
+    if (wd === 0 || wd === 6) {
+      toast("주말은 예약할 수 없어요.", "error");
+      return;
+    }
+    if (date < todayStr()) {
+      toast("지난 날짜는 예약할 수 없어요.", "error");
+      return;
+    }
+
+    const btn = $("submitBtn");
+    btn.disabled = true;
+    btn.textContent = "저장 중…";
+
+    const { error } = await db.from("reservations").insert({
+      room_id: roomId,
+      reserved_date: date,
+      period,
+      teacher_name: teacher,
+      grade,
+      class_no: classNo,
+      purpose: purpose || null,
+    });
+
+    btn.disabled = false;
+    btn.textContent = "예약하기";
+
+    if (error) {
+      if (error.code === "23505") {
+        toast("이미 예약된 시간입니다", "error");
+        showWeekOf(date, roomId);           // 시간표를 새로 고쳐 누가 예약했는지 보여 줌
+      } else {
+        toast("저장하지 못했어요: " + error.message, "error");
+      }
+      return;
+    }
+
+    toast(`${roomName(roomId)} ${prettyDate(date)} ${period}교시 예약 완료!`, "ok");
+    $("fPurpose").value = "";                 // 교사 이름·학년·반은 다음 예약을 위해 남겨 둠
+    showWeekOf(date, roomId);
+    searchReservations();
+  }
+
+  // ---------- 검색 ----------
+  async function searchReservations() {
+    const list = $("list");
+    const teacher = $("sTeacher").value.trim();
+    const roomId = $("sRoom").value;
+    const date = $("sDate").value;
+
+    let q = db
+      .from("reservations")
+      .select("id, room_id, reserved_date, period, teacher_name, grade, class_no, purpose")
+      .order("reserved_date", { ascending: true })
+      .order("period", { ascending: true })
+      .limit(200);
+
+    if (teacher) q = q.ilike("teacher_name", `%${teacher.replace(/[%_\\]/g, "\\$&")}%`);
+    if (roomId) q = q.eq("room_id", Number(roomId));
+    if (date) q = q.eq("reserved_date", date);
+    else q = q.gte("reserved_date", todayStr());
+
+    const { data, error } = await q;
+    if (error) {
+      list.innerHTML = "";
+      toast("목록을 불러오지 못했어요: " + error.message, "error");
+      return;
+    }
+    if (!data.length) {
+      list.innerHTML = '<div class="empty">조건에 맞는 예약이 없어요.</div>';
+      return;
+    }
+
+    list.innerHTML = "";
+    data.forEach((r) => {
+      const item = document.createElement("div");
+      item.className = "item";
+
+      const main = document.createElement("div");
+      main.className = "item-main";
+      const title = document.createElement("div");
+      title.className = "item-title";
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = roomName(r.room_id);
+      title.append(tag, `${prettyDate(r.reserved_date)} ${r.period}교시`);
+      const sub = document.createElement("div");
+      sub.className = "item-sub";
+      sub.textContent =
+        `${r.teacher_name} 선생님 · ${r.grade}학년 ${r.class_no}반` + (r.purpose ? ` · ${r.purpose}` : "");
+      main.append(title, sub);
+
+      const cancel = document.createElement("button");
+      cancel.className = "btn-danger";
+      cancel.textContent = "취소";
+      cancel.addEventListener("click", () => askDelete(r));
+
+      item.append(main, cancel);
+      list.appendChild(item);
+    });
+  }
+
+  // ---------- 취소 ----------
+  function askDelete(r) {
+    pendingDelete = r;
+    $("modalText").textContent =
+      `${roomName(r.room_id)}\n${prettyDate(r.reserved_date)} ${r.period}교시\n${r.teacher_name} 선생님 (${r.grade}학년 ${r.class_no}반)`;
+    $("modalBg").classList.add("show");
+    $("modalNo").focus();
+  }
+  function closeModal() {
+    pendingDelete = null;
+    $("modalBg").classList.remove("show");
+  }
+  async function confirmDelete() {
+    const r = pendingDelete;
+    if (!r) return;
+    $("modalYes").disabled = true;
+
+    const { data, error } = await db.from("reservations").delete().eq("id", r.id).select("id");
+
+    $("modalYes").disabled = false;
+    closeModal();
+
+    if (error) {
+      toast("취소하지 못했어요: " + error.message, "error");
+      return;
+    }
+    if (!data || data.length === 0) {
+      toast("이미 취소된 예약이에요.", "error");
+    } else {
+      toast("예약을 취소했어요.", "ok");
+    }
+    searchReservations();
+    renderTimetable();
+  }
+
+  // ---------- 시작 ----------
+  async function init() {
+    fillSelects();
+    $("fDate").min = todayStr();
+
+    const now = new Date();
+    const wd = now.getDay();
+    // 주말에 열면 다음 주 시간표를 보여 줌
+    weekStart = mondayOf(wd === 0 || wd === 6 ? addDays(now, 7) : now);
+    $("fDate").value = fmt(wd === 0 || wd === 6 ? weekStart : now);
+
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      $("setupWarning").style.display = "block";
+      return;
+    }
+    db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    await loadRooms();
+    renderTimetable();
+    searchReservations();
+
+    $("reserveForm").addEventListener("submit", submitReservation);
+    $("ttRoom").addEventListener("change", renderTimetable);
+    $("prevWeek").addEventListener("click", () => { weekStart = addDays(weekStart, -7); renderTimetable(); });
+    $("nextWeek").addEventListener("click", () => { weekStart = addDays(weekStart, 7); renderTimetable(); });
+    $("thisWeek").addEventListener("click", () => { weekStart = mondayOf(new Date()); renderTimetable(); });
+
+    $("searchBtn").addEventListener("click", searchReservations);
+    $("resetBtn").addEventListener("click", () => {
+      $("sTeacher").value = "";
+      $("sRoom").value = "";
+      $("sDate").value = "";
+      searchReservations();
+    });
+    $("sRoom").addEventListener("change", searchReservations);
+    $("sDate").addEventListener("change", searchReservations);
+    let typing = null;
+    $("sTeacher").addEventListener("input", () => {
+      clearTimeout(typing);
+      typing = setTimeout(searchReservations, 350);
+    });
+
+    $("modalNo").addEventListener("click", closeModal);
+    $("modalYes").addEventListener("click", confirmDelete);
+    $("modalBg").addEventListener("click", (e) => { if (e.target.id === "modalBg") closeModal(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+  }
+
+  init();
+</script>
+</body>
+</html>
